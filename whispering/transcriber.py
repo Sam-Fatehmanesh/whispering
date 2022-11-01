@@ -231,11 +231,12 @@ class WhisperStreamingTranscriber:
         *,
         audio: np.ndarray,
         ctx: Context,
+        use_transcriber_vad: bool = True,
     ) -> Iterator[ParsedChunk]:
         logger.debug(f"{len(audio)}")
         force_padding: bool = False
-
-        if ctx.vad_threshold > 0.0:
+        
+        if use_transcriber_vad and ctx.vad_threshold > 0.0:
             x = [
                 v
                 for v in self.vad(

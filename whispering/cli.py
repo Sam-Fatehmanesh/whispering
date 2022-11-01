@@ -98,6 +98,67 @@ def transcribe_from_mic(
                 sys.stderr.flush()
 
 
+def transcribe_from_mic_variable_input_length(
+    *,
+    wsp: WhisperStreamingTranscriber,
+    sd_device: Optional[Union[int, str]],
+    num_block: int,
+    ctx: Context,
+    no_progress: bool,
+) -> Iterator[str]:
+    q = queue.Queue()
+
+    def sd_callback(indata, frames, time, status):
+        if status:
+            logger.warning(status)
+            
+        q.put(indata.ravel())
+
+    logger.info("Ready to transcribe")
+
+    with sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        blocksize=N_FRAMES * num_block,
+        device=sd_device,
+        dtype="float32",
+        channels=1,
+        callback=sd_callback,
+    ):
+        idx: int = 0
+        vad = VAD()
+
+        audio_store = np.empty((0,),dtype=np.float32)
+        recording = False
+        while True:
+            logger.debug(f"Audio #: {idx}, The rest of queue: {q.qsize()}")
+
+
+            audio = q.get()
+            x = [
+                v
+                for v in vad(
+                    audio=audio,
+                    total_block_number=1,
+                    threshold=ctx.vad_threshold,
+                )
+            ]
+
+            if len(x) > 0:
+                recording = True
+                audio_store = np.append(audio_store, audio)
+                #print("RECORDING")
+
+            elif recording == True:
+                recording = False
+                #print(f'PROCESSING')
+                output = [chunk.text for chunk in wsp.transcribe(audio=audio_store, ctx=ctx, use_transcriber_vad=False)]
+                output = ''.join(output)
+                yield f"{output}\n"
+                audio_store = audio
+
+            else:
+                audio_store = audio
+
 def get_opts() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
@@ -193,6 +254,7 @@ def get_opts() -> argparse.Namespace:
         "--debug",
         action="store_true",
     )
+    
 
     opts = parser.parse_args()
 
