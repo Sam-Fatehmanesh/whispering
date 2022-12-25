@@ -1,26 +1,42 @@
 #!/usr/bin/env python3
 
 
-import sys
-from unittest.mock import patch
+from pydantic import BaseModel
 
-from whispering.cli import get_opts, is_valid_arg
+from whispering.cli import Mode, is_valid_arg
+
+
+class ArgExample(BaseModel):
+    mode: Mode
+    cmd: str
+    ok: bool
 
 
 def test_options():
 
-    invalid_args = [
-        "--mode server --mic 0",
-        "--mode server --mic 1",
-        "--mode server --beam_size 3",
-        "--mode server --temperature 0",
-        "--mode server --num_block 3",
-        "--mode mic --host 0.0.0.0",
-        "--mode mic --port 8000",
+    exs = [
+        ArgExample(mode=Mode.server, cmd="--mic 0", ok=False),
+        ArgExample(mode=Mode.server, cmd="--mic 1", ok=False),
+        ArgExample(
+            mode=Mode.server,
+            cmd="--host 0.0.0.0 --port 8000",
+            ok=True,
+        ),
+        ArgExample(
+            mode=Mode.server,
+            cmd="--language en --model tiny --host 0.0.0.0 --port 8000",
+            ok=True,
+        ),
+        ArgExample(mode=Mode.server, cmd="--beam_size 3", ok=False),
+        ArgExample(mode=Mode.server, cmd="--temperature 0", ok=False),
+        ArgExample(mode=Mode.server, cmd="--num_block 3", ok=False),
+        ArgExample(mode=Mode.mic, cmd="--host 0.0.0.0", ok=False),
+        ArgExample(mode=Mode.mic, cmd="--port 8000", ok=False),
     ]
 
-    for invalid_arg in invalid_args:
-        with patch.object(sys, "argv", [""] + invalid_arg.split()):
-            opts = get_opts()
-            ok = is_valid_arg(opts)
-            assert ok is False, f"{invalid_arg} should be invalid"
+    for ex in exs:
+        ok = is_valid_arg(
+            mode=ex.mode.value,
+            args=ex.cmd.split(),
+        )
+        assert ok is ex.ok, f"{ex.cmd} should be {ex.ok}"

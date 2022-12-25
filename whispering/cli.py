@@ -7,7 +7,7 @@ import sys
 from enum import Enum
 from logging import DEBUG, INFO, basicConfig, getLogger
 from pathlib import Path
-from typing import Iterator, Optional, Union
+from typing import Iterator, List, Optional, Union
 
 import sounddevice as sd
 import torch
@@ -217,6 +217,12 @@ def get_opts() -> argparse.Namespace:
         help="Maximum number of skip to analyze because of nospeech",
         default=16,
     )
+    group_ctx.add_argument(
+        "--frame",
+        type=int,
+        help="The number of minimum frames of mel spectrogram input for Whisper",
+        default=N_FRAMES,
+    )
 
     group_misc = parser.add_argument_group("Other options")
     group_misc.add_argument(
@@ -290,6 +296,7 @@ def get_context(*, opts) -> Context:
         temperatures=opts.temperature,
         max_nospeech_skip=opts.max_nospeech_skip,
         vad_threshold=opts.vad,
+        mel_frame_min_num=opts.frame,
     )
     logger.debug(f"Context: {ctx}")
     return ctx
@@ -302,24 +309,36 @@ def show_devices():
             print(f"{i}: {device['name']}")
 
 
-def is_valid_arg(opts) -> bool:
+def is_valid_arg(
+    *,
+    args: List[str],
+    mode: str,
+) -> bool:
     keys = []
-    if opts.mode == Mode.server.value:
-        keys = [
-            "mic",
-            "beam_size",
-            "temperature",
-        ]
-    elif opts.mode == Mode.mic.value:
-        keys = [
-            "host",
-            "port",
-        ]
+    if mode == Mode.server.value:
+        keys = {
+            "--mic",
+            "--beam_size",
+            "-b",
+            "--temperature",
+            "-t",
+            "--num_block",
+            "-n",
+            "--vad",
+            "--max_nospeech_skip",
+            "--output",
+            "--show-devices",
+            "--no-progress",
+        }
+    elif mode == Mode.mic.value:
+        keys = {
+            "--host",
+            "--port",
+        }
 
-    for key in keys:
-        _val = vars(opts).get(key)
-        if _val is not None and _val is not False:
-            sys.stderr.write(f"{key} is not accepted option for {opts.mode} mode\n")
+    for arg in args:
+        if arg in keys:
+            sys.stderr.write(f"{arg} is not accepted option for {mode} mode\n")
             return False
     return True
 
@@ -342,7 +361,10 @@ def main() -> None:
     ):
         opts.mode = Mode.server.value
 
-    if not is_valid_arg(opts):
+    if not is_valid_arg(
+        args=sys.argv[1:],
+        mode=opts.mode,
+    ):
         sys.exit(1)
 
     if opts.mode == Mode.client.value:
